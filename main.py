@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Any, Tuple
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -45,6 +46,32 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 UPLOADS_DIR = ROOT / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_output_override(value: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Validate and resolve a user-provided output path inside OUTPUT_DIR."""
+    if value is None:
+        return None, None
+    cleaned = value.strip()
+    if not cleaned:
+        return None, None
+
+    cleaned = cleaned.replace("\\", "/")
+    candidate = Path(cleaned)
+    if candidate.is_absolute():
+        raise HTTPException(status_code=400, detail="Output path must be relative to the outputs directory")
+    if any(part == ".." for part in candidate.parts):
+        raise HTTPException(status_code=400, detail="Output path cannot traverse outside the outputs directory")
+
+    target = (OUTPUT_DIR / candidate).resolve()
+    try:
+        relative = target.relative_to(OUTPUT_DIR)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Output path must stay within the outputs directory")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    return str(target), str(relative)
 
 
 # --- App ---
@@ -92,6 +119,7 @@ def build_instruction(
     user_prompt: str,
     previous_command: Optional[str] = None,
     critic_feedback: Optional[str] = None,
+    desired_output: Optional[str] = None,
 ) -> str:
     uploads_dir = str(UPLOADS_DIR)
     full_input_paths = ", ".join(str(UPLOADS_DIR / fn) for fn in list_of_filenames) if list_of_filenames else "(none)"
@@ -118,6 +146,16 @@ def build_instruction(
         "- Calculate bitrate: (target_size_MB * 8192) / duration_seconds = bitrate_kbps\n"
         "- Use -b:v for video bitrate, -b:a for audio bitrate\n"
         "- NEVER use two-pass encoding (no -pass 1, -pass 2, or && operators)\n\n"
+    )
+
+    if desired_output:
+        base += (
+            "OUTPUT TARGET:\n"
+            f"- Final output file MUST be exactly: {desired_output}\n"
+            "- Do not create additional outputs or alternate filenames\n\n"
+        )
+
+    base += (
         "STRICT RULES:\n"
         "- Do EXACTLY what user asks - NO extra filters, scaling, trimming, or changes\n"
         "- Preserve resolution/fps/duration unless specifically requested to change\n"
@@ -174,6 +212,7 @@ def extract_and_sanitize_command(
     filenames: List[str],
     uploads_dir: str,
     *,
+    forced_output_path: Optional[str] = None,
     check_forbidden: bool = True,
 ) -> str:
     # Extract first line that starts with 'ffmpeg'
@@ -235,21 +274,44 @@ def extract_and_sanitize_command(
                         tokens[i] = t.replace(f"={name}", f'="{full}"')
                         t = tokens[i]
                         rewritten = True
+            if forced_output_path:
+                if not tokens:
+                    tokens = ["ffmpeg", forced_output_path]
+                elif tokens[-1].startswith("-"):
+                    tokens.append(forced_output_path)
+                else:
+                    tokens[-1] = forced_output_path
             # Re-join with double-quote preference
             cmd = " ".join(quote_token(tok) for tok in tokens)
     except Exception:
         # Best-effort; on failure, keep original cmd
         pass
 
-    # Light check that output directory is referenced for outputs (best-effort)
-    # If there's a likely output filename at the end without a path, prepend default_output_path
-    parts = cmd.split()
-    if parts and not parts[-1].startswith("-"):
-        last = parts[-1]
-        # Heuristic: if last token has an extension and no path separators, ensure it includes output dir
-        if ("/" not in last and "\\" not in last) and re.search(r"\.[a-zA-Z0-9]{2,4}$", last):
-            parts[-1] = f"{default_output_path}/{last}"
-            cmd = " ".join(parts)
+    if forced_output_path:
+        try:
+            tokens = shlex.split(cmd)
+        except Exception:
+            tokens = cmd.split()
+        if not tokens:
+            tokens = ["ffmpeg", forced_output_path]
+        elif tokens[0].lower() != "ffmpeg":
+            tokens = ["ffmpeg"] + tokens
+        if tokens[-1].startswith("-"):
+            tokens.append(forced_output_path)
+        else:
+            tokens[-1] = forced_output_path
+        cmd = " ".join(quote_token(tok) for tok in tokens)
+
+    if not forced_output_path:
+        # Light check that output directory is referenced for outputs (best-effort)
+        # If there's a likely output filename at the end without a path, prepend default_output_path
+        parts = cmd.split()
+        if parts and not parts[-1].startswith("-"):
+            last = parts[-1]
+            # Heuristic: if last token has an extension and no path separators, ensure it includes output dir
+            if ("/" not in last and "\\" not in last) and re.search(r"\.[a-zA-Z0-9]{2,4}$", last):
+                parts[-1] = f"{default_output_path}/{last}"
+                cmd = " ".join(parts)
 
     return cmd
 
@@ -286,6 +348,7 @@ def call_gemini_critic(
     default_output_path: str,
     candidate_command: str,
     forbidden_tokens: List[str],
+    forced_output: Optional[str] = None,
 ) -> dict:
     """Ask a strict critic to validate the command; expects JSON response."""
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -309,6 +372,16 @@ def call_gemini_critic(
         "4. Does EXACTLY what user asked - NO extra operations\n"
         "5. Single-line starting with 'ffmpeg' - ONE command only\n"
         "6. NO two-pass encoding (-pass 1/-pass 2) - use single-pass with bitrate calculation\n\n"
+    )
+
+    if forced_output:
+        instruction += (
+            "OUTPUT CHECK:\n"
+            f"- Final command MUST write to exactly this path: {forced_output}\n"
+            "- Reject if different output filename/path is used\n\n"
+        )
+
+    instruction += (
         'RESPOND WITH ONLY THIS JSON (no fences):\n'
         '{"ok": boolean, "reasons": ["reason1"], "must_changes": ["change1"], "revised_command": "fixed_cmd_or_null"}\n'
     )
@@ -414,10 +487,12 @@ async def generate(
     enable_critic: bool = Form(True, description="Run the critic loop to refine commands"),
     max_iters: int = Form(3, description="Max iterations for generator+critic loop"),
     enable_explain: bool = Form(True, description="Ask LLM to explain the final command"),
+    output_path: Optional[str] = Form(None, description="Override output path relative to the default outputs directory"),
 ):
     t_total_start = time.perf_counter()
     t_upload_hash_s = 0.0
     t_ffprobe_s = 0.0
+    max_iters = max(1, min(int(max_iters), 6))
     # Save uploaded files (store under uploads/ with original filenames)
     filenames: List[str] = []
     file_metas: List[FileMeta] = []
@@ -449,6 +524,8 @@ async def generate(
         t_ffprobe_s += time.perf_counter() - t1
         file_metas.append(meta)
 
+    custom_output_abs, custom_output_rel = resolve_output_override(output_path)
+
     # Iterative generation with critic loop
     reviews: List[Review] = []
     previous_cmd: Optional[str] = None
@@ -466,13 +543,19 @@ async def generate(
                 prompt,
                 previous_command=previous_cmd,
                 critic_feedback=critic_feedback_text,
+                desired_output=custom_output_abs,
             )
             t_gen0 = time.perf_counter()
             llm_text = call_gemini(instruction)
             gen_s = time.perf_counter() - t_gen0
             t_san0 = time.perf_counter()
             candidate_cmd = extract_and_sanitize_command(
-                llm_text, str(OUTPUT_DIR), filenames, str(UPLOADS_DIR), check_forbidden=False
+                llm_text,
+                str(OUTPUT_DIR),
+                filenames,
+                str(UPLOADS_DIR),
+                forced_output_path=custom_output_abs,
+                check_forbidden=False,
             )
             sanitize_s = time.perf_counter() - t_san0
 
@@ -483,6 +566,7 @@ async def generate(
                 str(OUTPUT_DIR),
                 candidate_cmd,
                 FORBIDDEN_TOKENS,
+                forced_output=custom_output_abs,
             )
             critic_s = time.perf_counter() - t_cr0
             review = Review(
@@ -512,13 +596,23 @@ async def generate(
                 previous_cmd = next_cmd
     else:
         # Single-shot generation without critic
-        instruction = build_instruction(filenames, str(OUTPUT_DIR), prompt)
+        instruction = build_instruction(
+            filenames,
+            str(OUTPUT_DIR),
+            prompt,
+            desired_output=custom_output_abs,
+        )
         t_gen0 = time.perf_counter()
         llm_text = call_gemini(instruction)
         gen_s = time.perf_counter() - t_gen0
         t_san0 = time.perf_counter()
         candidate_cmd = extract_and_sanitize_command(
-            llm_text, str(OUTPUT_DIR), filenames, str(UPLOADS_DIR), check_forbidden=False
+            llm_text,
+            str(OUTPUT_DIR),
+            filenames,
+            str(UPLOADS_DIR),
+            forced_output_path=custom_output_abs,
+            check_forbidden=False,
         )
         sanitize_s = time.perf_counter() - t_san0
         reviews.append(
@@ -539,10 +633,11 @@ async def generate(
     cmd = final_cmd or reviews[-1].candidate_command
 
     # Estimated output path (best-effort: last token if not a flag)
-    est_output = None
-    parts = cmd.split()
-    if parts and not parts[-1].startswith("-"):
-        est_output = parts[-1]
+    est_output = custom_output_abs
+    if est_output is None:
+        parts = cmd.split()
+        if parts and not parts[-1].startswith("-"):
+            est_output = parts[-1]
 
     # Safety report
     forbidden_found = [tok for tok in FORBIDDEN_TOKENS if tok in cmd]
@@ -564,6 +659,14 @@ async def generate(
         "explain_s": t_explain_s,
     }
 
+    notes = [
+        "Inputs saved under uploads and rewritten to full paths in the command.",
+        "Outputs are enforced to be under the configured default output directory.",
+    ]
+    if custom_output_abs:
+        display_rel = custom_output_rel or Path(custom_output_abs).name
+        notes.append(f"Custom output override applied: {display_rel}")
+
     resp = GenerateResponse(
         prompt=prompt,
         command=cmd,
@@ -574,14 +677,46 @@ async def generate(
         safety=safety,
         model="gemini-2.5-flash",
         created_at=datetime.datetime.utcnow().isoformat() + "Z",
-        notes=[
-            "Inputs saved under uploads and rewritten to full paths in the command.",
-            "Outputs are enforced to be under the configured default output directory.",
-        ],
+        notes=notes,
         reviews=reviews,
         timings=timings,
     )
     return resp
+
+
+@app.post("/execute")
+async def execute_command(command: str = Form(..., description="ffmpeg command to execute")) -> dict:
+    cmd = (command or "").strip()
+    if not cmd.lower().startswith("ffmpeg"):
+        raise HTTPException(status_code=400, detail="Only ffmpeg commands can be executed")
+    for tok in FORBIDDEN_TOKENS:
+        if tok in cmd:
+            raise HTTPException(status_code=400, detail=f"Forbidden token detected in command: {tok}")
+    try:
+        tokens = shlex.split(cmd)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to parse command: {exc}")
+    if not tokens or tokens[0].lower() != "ffmpeg":
+        raise HTTPException(status_code=400, detail="Command must start with ffmpeg")
+
+    try:
+        result = await run_in_threadpool(
+            lambda: subprocess.run(
+                tokens,
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Command timed out after 600 seconds")
+
+    return {
+        "returncode": result.returncode,
+        "stdout": (result.stdout or "")[-4000:],
+        "stderr": (result.stderr or "")[-4000:],
+    }
 
 
 # Optional: run with `uvicorn main:app --reload`

@@ -51,28 +51,38 @@
     };
   </script>
 </head>
-<body class="bg-background-dark text-dialogue-text font-mono flex flex-col min-h-screen antialiased">
-  
-  <main class="flex-grow flex flex-col items-center justify-center px-4 py-8">
-    <div class="w-full max-w-4xl flex flex-col items-center space-y-8">
-      
+<body class="bg-gradient-to-br from-background-dark via-[#05130d] to-black text-dialogue-text font-mono flex flex-col min-h-screen antialiased">
+
+  <main class="flex-grow flex flex-col items-center justify-center px-4 py-12">
+    <div class="w-full max-w-5xl flex flex-col items-center space-y-10">
+
       <!-- Dynamic Quote Box -->
-      <div id="quoteBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300">
-        <p class="mb-4 text-dialogue-text leading-relaxed text-lg">
-          <span id="quoteText">Loading wisdom from the digital realm...</span>
-        </p>
+      <div id="quoteBox" class="w-full bg-surface-dark/90 border-2 border-retro-border/80 p-6 shadow-retro transition-all duration-300 backdrop-blur-sm">
+        <div class="flex items-start gap-4">
+          <span class="material-icons text-retro-border text-4xl mt-1">auto_fix_high</span>
+          <div>
+            <p class="mb-2 text-dialogue-text leading-relaxed text-lg">Booting up digital sages...</p>
+            <p class="text-dialogue-text/70 leading-relaxed italic">Summoning inspiration for your next command.</p>
+          </div>
+        </div>
       </div>
 
       <!-- Command Output Display (Hidden Initially) -->
       <div id="outputBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300 hidden">
-        <div class="mb-4">
+        <div class="mb-5">
           <p class="text-dialogue-text text-sm mb-2">Generated Command:</p>
           <div class="bg-background-dark border border-retro-border p-3 rounded">
             <code id="commandOutput" class="text-player-text text-sm break-all"></code>
           </div>
-          <button id="copyBtn" class="mt-2 bg-retro-border text-background-dark font-mono py-1 px-3 text-sm hover:bg-retro-border/80">
-            Copy Command
-          </button>
+          <div class="flex flex-wrap gap-3 mt-3">
+            <button id="copyBtn" type="button" class="bg-retro-border text-background-dark font-mono py-1 px-3 text-sm hover:bg-retro-border/80 transition">
+              Copy Command
+            </button>
+            <button id="runBtn" type="button" class="bg-transparent border border-retro-border/70 text-dialogue-text py-1 px-3 text-sm hover:bg-retro-border/20 transition disabled:opacity-40 disabled:pointer-events-none">
+              Execute on Server
+            </button>
+          </div>
+          <p id="outputDestination" class="mt-3 text-dialogue-text/60 text-xs uppercase tracking-widest"></p>
         </div>
         <div id="explanationBox" class="mt-4">
           <p class="text-dialogue-text text-sm mb-2">Explanation:</p>
@@ -82,24 +92,51 @@
           <p class="text-dialogue-text text-sm mb-2">Reviews:</p>
           <div id="reviewsList" class="space-y-2"></div>
         </div>
+        <div id="notesBox" class="mt-4 hidden">
+          <p class="text-dialogue-text text-sm mb-2">Notes:</p>
+          <ul id="notesList" class="list-disc list-inside space-y-1 text-dialogue-text/70 text-sm"></ul>
+        </div>
+      </div>
+
+      <!-- Command Execution Result -->
+      <div id="executionBox" class="w-full bg-surface-dark/90 border-2 border-retro-border p-6 shadow-retro transition-all duration-300 hidden">
+        <div class="flex items-start gap-3 mb-4">
+          <span class="material-icons text-retro-border text-3xl">play_circle</span>
+          <div>
+            <p id="executionStatus" class="text-dialogue-text font-semibold">Awaiting execution</p>
+            <p class="text-dialogue-text/60 text-xs">Command runs on the server with outputs captured below.</p>
+          </div>
+        </div>
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <p class="text-dialogue-text/70 text-xs uppercase tracking-widest mb-2">stdout</p>
+            <pre id="executionStdout" class="bg-background-dark border border-retro-border/40 rounded p-3 text-xs text-dialogue-text/80 whitespace-pre-wrap max-h-64 overflow-y-auto">(no output yet)</pre>
+          </div>
+          <div>
+            <p class="text-dialogue-text/70 text-xs uppercase tracking-widest mb-2">stderr</p>
+            <pre id="executionStderr" class="bg-background-dark border border-retro-border/40 rounded p-3 text-xs text-dialogue-text/80 whitespace-pre-wrap max-h-64 overflow-y-auto">(no output yet)</pre>
+          </div>
+        </div>
       </div>
 
       <!-- Input Area -->
-      <div class="w-full bg-surface-dark border-2 border-retro-border p-4 shadow-retro transition-all duration-300">
+      <div class="w-full bg-surface-dark/95 border-2 border-retro-border p-5 shadow-retro transition-all duration-300 focus-within:border-[#27ff8f]">
         <form id="commandForm" enctype="multipart/form-data">
-          <div class="flex items-start relative">
-            <span class="text-player-text pr-2 pt-2">&gt;</span>
+          <div class="flex items-start gap-3">
+            <div class="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded border border-retro-border/60 text-retro-border">
+              <span class="material-icons">terminal</span>
+            </div>
             <textarea 
               id="promptInput"
               name="prompt"
-              class="flex-grow bg-transparent border-none focus:ring-0 resize-none p-0 text-player-text placeholder-gray-500 text-lg" 
+              class="flex-grow bg-transparent border border-retro-border/20 focus:border-retro-border focus:ring-0 resize-none rounded px-3 py-2 text-player-text placeholder-gray-500 text-lg transition"
               placeholder="Describe what you want to do with your media..."
-              rows="2"
+              rows="3"
               required
             ></textarea>
-            <div class="flex items-center pl-2 space-x-2">
-              <label for="fileInput" class="p-2 rounded-sm hover:bg-retro-border/20 cursor-pointer">
-                <span class="material-icons text-retro-border">attachment</span>
+            <div class="flex flex-col items-stretch gap-2">
+              <label for="fileInput" class="flex items-center justify-center h-10 w-10 rounded border border-retro-border/40 hover:bg-retro-border/10 cursor-pointer transition">
+                <span class="material-icons text-retro-border">attach_file</span>
               </label>
               <input 
                 type="file" 
@@ -112,9 +149,9 @@
               <button 
                 type="submit"
                 id="submitBtn"
-                class="p-2 rounded-sm bg-retro-border text-background-dark hover:bg-retro-border/80"
+                class="flex items-center justify-center h-10 w-10 rounded bg-retro-border text-background-dark hover:bg-retro-border/80 transition"
               >
-                <span class="material-icons">send</span>
+                <span class="material-icons">rocket_launch</span>
               </button>
             </div>
           </div>
@@ -123,6 +160,46 @@
           <div id="fileList" class="mt-3 space-y-1 hidden">
             <p class="text-dialogue-text text-sm">Selected Files:</p>
             <div id="fileItems" class="text-player-text text-sm"></div>
+          </div>
+
+          <!-- Advanced Controls -->
+          <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div class="flex flex-col gap-1">
+              <label for="outputPath" class="text-dialogue-text/80 text-xs uppercase tracking-widest">Output filename/path</label>
+              <input
+                type="text"
+                id="outputPath"
+                name="output_path"
+                placeholder="custom-output.mp4"
+                class="bg-background-dark border border-retro-border/30 focus:border-retro-border focus:ring-0 rounded px-3 py-2 text-sm text-player-text placeholder:text-dialogue-text/40"
+                autocomplete="off"
+              />
+              <p class="text-dialogue-text/50 text-xs">Saved inside outputs/; nested folders allowed.</p>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="maxIters" class="text-dialogue-text/80 text-xs uppercase tracking-widest">Max iterations</label>
+              <input
+                type="number"
+                id="maxIters"
+                name="max_iters"
+                min="1"
+                max="6"
+                value="3"
+                class="bg-background-dark border border-retro-border/30 focus:border-retro-border focus:ring-0 rounded px-3 py-2 text-sm text-player-text"
+              />
+              <p class="text-dialogue-text/50 text-xs">Controls generator + critic refinement loops.</p>
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="text-dialogue-text/80 text-xs uppercase tracking-widest">Options</label>
+              <label class="flex items-center gap-2 text-sm text-dialogue-text/80">
+                <input type="checkbox" id="enableCritic" name="enable_critic" value="true" class="accent-retro-border" checked />
+                Enable critic pass
+              </label>
+              <label class="flex items-center gap-2 text-sm text-dialogue-text/80">
+                <input type="checkbox" id="enableExplain" name="enable_explain" value="true" class="accent-retro-border" checked />
+                Generate explanation
+              </label>
+            </div>
           </div>
         </form>
       </div>
@@ -139,26 +216,45 @@
         </div>
       </div>
 
-      <!-- Quick Action Buttons -->
-      <div class="flex flex-wrap justify-center gap-6 mt-8">
-        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Convert to MP4">
-          [1] Convert Format
-        </button>
-        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Add watermark to the video">
-          [2] Modify Visuals
-        </button>
-        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Adjust audio volume">
-          [3] Alter Audio
-        </button>
-        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Combine video with audio track">
-          [4] Combine Elements
-        </button>
-      </div>
+      <!-- Effect Blocks -->
+      <section class="w-full">
+        <div class="bg-surface-dark/90 border-2 border-retro-border p-6 shadow-retro transition-all duration-300 backdrop-blur-sm">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="flex items-center gap-2 text-lg text-dialogue-text">
+                <span class="material-icons text-retro-border text-3xl">tune</span>
+                Effect Blocks
+              </h2>
+              <p class="text-sm text-dialogue-text/70">Pick a block to auto-fill a proven prompt.</p>
+            </div>
+          </div>
+          <div id="effectsGrid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <!-- Cards rendered via JS -->
+          </div>
+        </div>
+      </section>
     </div>
   </main>
 
   <script>
-    const API_BASE = window.location.origin;
+  const API_BASE = window.location.origin;
+  const quoteBox = document.getElementById('quoteBox');
+  const promptInput = document.getElementById('promptInput');
+  const outputPathInput = document.getElementById('outputPath');
+  const maxItersInput = document.getElementById('maxIters');
+  const enableCriticInput = document.getElementById('enableCritic');
+  const enableExplainInput = document.getElementById('enableExplain');
+  const commandOutputEl = document.getElementById('commandOutput');
+  const copyBtn = document.getElementById('copyBtn');
+  const runBtn = document.getElementById('runBtn');
+  const outputDestination = document.getElementById('outputDestination');
+  const notesBox = document.getElementById('notesBox');
+  const notesList = document.getElementById('notesList');
+  const executionBox = document.getElementById('executionBox');
+  const executionStatus = document.getElementById('executionStatus');
+  const executionStdout = document.getElementById('executionStdout');
+  const executionStderr = document.getElementById('executionStderr');
+  runBtn.disabled = true;
     
     // LLM-generated quotes about FFmpeg and media processing
     const quotes = [
@@ -193,14 +289,14 @@
     function displayRandomQuote() {
       currentQuoteIndex = Math.floor(Math.random() * quotes.length);
       const quote = quotes[currentQuoteIndex];
-      const quoteBox = document.getElementById('quoteBox');
       quoteBox.innerHTML = `
-        <p class="mb-4 text-dialogue-text leading-relaxed text-lg">
-          ${quote.text}
-        </p>
-        <p class="text-dialogue-text leading-relaxed text-lg italic">
-          "${quote.italic}"
-        </p>
+        <div class="flex items-start gap-4">
+          <span class="material-icons text-retro-border text-4xl mt-1">auto_fix_high</span>
+          <div>
+            <p class="text-dialogue-text leading-relaxed text-lg">${quote.text}</p>
+            <p class="text-dialogue-text/80 leading-relaxed text-lg italic">"${quote.italic}"</p>
+          </div>
+        </div>
       `;
     }
 
@@ -229,29 +325,122 @@
       }
     });
 
-    // Quick action buttons
-    document.querySelectorAll('.quick-action').forEach(button => {
-      button.addEventListener('click', function() {
-        document.getElementById('promptInput').value = this.dataset.prompt;
-        document.getElementById('promptInput').focus();
+    // Effect Blocks configuration and rendering
+    const effects = [
+      {
+        icon: 'aspect_ratio',
+        title: 'Resize Visuals',
+        description: 'Adjust the video to 1280x720 while keeping the original aspect ratio.',
+        prompt: 'Resize the uploaded video to 1280x720 while preserving aspect ratio and padding with black bars if needed.'
+      },
+      {
+        icon: 'opacity',
+        title: 'Watermark Overlay',
+        description: 'Place a watermark in the top-right corner with slight transparency.',
+        prompt: 'Overlay the watermark image in the top-right corner of the video at 80% opacity.'
+      },
+      {
+        icon: 'switch_video',
+        title: 'Convert Format',
+        description: 'Transcode any input to MP4 using H.264 video and AAC audio.',
+        prompt: 'Convert the uploaded media to MP4 with H.264 video, AAC audio, and enable faststart for web playback.'
+      },
+      {
+        icon: 'content_cut',
+        title: 'Trim Segment',
+        description: 'Extract a short clip by time range.',
+        prompt: 'Trim the video from 00:00:10 to 00:00:40 while preserving audio sync.'
+      },
+      {
+        icon: 'graphic_eq',
+        title: 'Extract Audio',
+        description: 'Grab the audio track and export as high-quality MP3.',
+        prompt: 'Extract the audio as a 192 kbps MP3 file from the uploaded video.'
+      },
+      {
+        icon: 'library_add',
+        title: 'Merge Clips',
+        description: 'Concatenate multiple videos in order.',
+        prompt: 'Concatenate all provided MP4 clips together without re-encoding.'
+      },
+      {
+        icon: 'slow_motion_video',
+        title: 'Speed Ramp',
+        description: 'Slow down the footage to half speed with audio pitch correction.',
+        prompt: 'Slow the video to 50% speed and keep audio pitch natural.'
+      },
+      {
+        icon: 'screen_rotation',
+        title: 'Rotate & Crop',
+        description: 'Rotate 90° clockwise and crop to a square.',
+        prompt: 'Rotate the video 90 degrees clockwise and crop to a centered 1080x1080 square.'
+      }
+    ];
+
+    const effectsGrid = document.getElementById('effectsGrid');
+    let activeEffectCard = null;
+
+    effects.forEach(effect => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'effect-card group relative bg-surface-dark/70 border border-retro-border/50 rounded-lg p-4 text-left transition hover:border-retro-border hover:shadow-retro flex flex-col gap-3';
+      button.dataset.prompt = effect.prompt;
+      button.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="material-icons text-retro-border text-3xl">${effect.icon}</span>
+          <span class="text-xs uppercase tracking-widest text-dialogue-text/40">Prompt</span>
+        </div>
+        <div>
+          <h3 class="text-dialogue-text font-semibold text-base">${effect.title}</h3>
+          <p class="text-dialogue-text/70 text-sm leading-snug">${effect.description}</p>
+        </div>
+      `;
+
+      button.addEventListener('click', () => {
+        promptInput.value = effect.prompt;
+        promptInput.focus();
+
+        if (activeEffectCard) {
+          activeEffectCard.classList.remove('ring-2', 'ring-retro-border', 'ring-offset-2', 'ring-offset-background-dark');
+        }
+
+        button.classList.add('ring-2', 'ring-retro-border', 'ring-offset-2', 'ring-offset-background-dark');
+        activeEffectCard = button;
       });
+
+      effectsGrid.appendChild(button);
     });
 
     // Form submission
-    const commandForm = document.getElementById('commandForm');
-    const loadingBox = document.getElementById('loadingBox');
-    const outputBox = document.getElementById('outputBox');
-    const submitBtn = document.getElementById('submitBtn');
+  const commandForm = document.getElementById('commandForm');
+  const loadingBox = document.getElementById('loadingBox');
+  const outputBox = document.getElementById('outputBox');
+  const submitBtn = document.getElementById('submitBtn');
 
     commandForm.addEventListener('submit', async function(e) {
       e.preventDefault();
       
       const formData = new FormData(this);
+      const iterations = Math.max(1, parseInt(maxItersInput.value || '3', 10));
+      formData.set('max_iters', String(iterations));
+      formData.set('enable_critic', enableCriticInput.checked ? 'true' : 'false');
+      formData.set('enable_explain', enableExplainInput.checked ? 'true' : 'false');
+      const outputOverride = (outputPathInput.value || '').trim();
+      if (outputOverride) {
+        formData.set('output_path', outputOverride);
+      } else {
+        formData.delete('output_path');
+      }
       
       // Show loading, hide output
       loadingBox.classList.remove('hidden');
       outputBox.classList.add('hidden');
       submitBtn.disabled = true;
+      runBtn.disabled = true;
+      executionBox.classList.add('hidden');
+      outputDestination.textContent = '';
+      notesList.innerHTML = '';
+      notesBox.classList.add('hidden');
 
       try {
         const response = await fetch(`${API_BASE}/generate`, {
@@ -266,8 +455,9 @@
         const data = await response.json();
         
         // Display results
-        document.getElementById('commandOutput').textContent = data.command;
-        document.getElementById('explanationText').textContent = data.explanation || 'No explanation provided.';
+  commandOutputEl.textContent = data.command || '';
+  document.getElementById('explanationText').textContent = data.explanation || 'No explanation provided.';
+  outputDestination.textContent = data.estimated_output_path ? `Output path: ${data.estimated_output_path}` : '';
         
         // Display reviews
         const reviewsList = document.getElementById('reviewsList');
@@ -284,6 +474,18 @@
           });
         }
 
+        if (data.notes && data.notes.length > 0) {
+          notesList.innerHTML = '';
+          data.notes.forEach(note => {
+            const item = document.createElement('li');
+            item.textContent = note;
+            notesList.appendChild(item);
+          });
+          notesBox.classList.remove('hidden');
+        }
+
+        runBtn.disabled = !(data.command && data.command.startsWith('ffmpeg'));
+
         // Show output box
         outputBox.classList.remove('hidden');
         
@@ -293,6 +495,7 @@
       } catch (error) {
         alert(`Error: ${error.message}`);
         console.error('Error:', error);
+        runBtn.disabled = true;
       } finally {
         loadingBox.classList.add('hidden');
         submitBtn.disabled = false;
@@ -300,8 +503,8 @@
     });
 
     // Copy command button
-    document.getElementById('copyBtn').addEventListener('click', function() {
-      const commandText = document.getElementById('commandOutput').textContent;
+    copyBtn.addEventListener('click', function() {
+      const commandText = commandOutputEl.textContent;
       navigator.clipboard.writeText(commandText).then(() => {
         const originalText = this.textContent;
         this.textContent = '✓ Copied!';
@@ -311,6 +514,51 @@
       }).catch(err => {
         alert('Failed to copy: ' + err);
       });
+    });
+
+    // Execute command button
+    runBtn.addEventListener('click', async () => {
+      const commandText = commandOutputEl.textContent.trim();
+      if (!commandText) {
+        return;
+      }
+      const confirmed = window.confirm('Execute this ffmpeg command on the server now?');
+      if (!confirmed) {
+        return;
+      }
+
+      runBtn.disabled = true;
+      executionBox.classList.remove('hidden');
+      executionStatus.textContent = 'Running command...';
+      executionStdout.textContent = '(collecting output)';
+      executionStderr.textContent = '(collecting output)';
+
+      try {
+        const execForm = new FormData();
+        execForm.append('command', commandText);
+        const response = await fetch(`${API_BASE}/execute`, {
+          method: 'POST',
+          body: execForm
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || 'Execution failed');
+        }
+
+        executionStatus.textContent = data.returncode === 0
+          ? 'Command completed successfully.'
+          : `Command exited with code ${data.returncode}.`;
+        executionStdout.textContent = data.stdout ? data.stdout.trim() : '(no stdout)';
+        executionStderr.textContent = data.stderr ? data.stderr.trim() : '(no stderr)';
+      } catch (error) {
+        executionStatus.textContent = `Execution failed: ${error.message}`;
+        executionStdout.textContent = '(no stdout captured)';
+        executionStderr.textContent = '(no stderr captured)';
+      } finally {
+        runBtn.disabled = false;
+      }
     });
   </script>
 
