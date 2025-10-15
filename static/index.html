@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>kraft - FFmpeg Command Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root {
+        --dialogue-text-color: #00FF00;
+        --player-text-color: #FFFF00;
+        --background-color: #1a1a1a;
+        --surface-color: #2c2c2c;
+        --border-color: #00FF00;
+        --accent-color: #4285F4;
+      }
+    }
+  </style>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#019863",
+            "background-dark": "#0f231c",
+            "surface-dark": "var(--surface-color)",
+            "dialogue-text": "var(--dialogue-text-color)",
+            "player-text": "var(--player-text-color)",
+            "retro-border": "var(--border-color)",
+            "background-light": "#f5f8f7"
+          },
+          fontFamily: {
+            display: "Space Grotesk",
+            mono: ["Roboto Mono", "monospace"]
+          },
+          borderRadius: {
+            DEFAULT: "0.25rem",
+            lg: "0.5rem",
+            xl: "0.75rem",
+            full: "9999px"
+          },
+          boxShadow: {
+            retro: "4px 4px 0px 0px var(--retro-border)"
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-background-dark text-dialogue-text font-mono flex flex-col min-h-screen antialiased">
+  
+  <main class="flex-grow flex flex-col items-center justify-center px-4 py-8">
+    <div class="w-full max-w-4xl flex flex-col items-center space-y-8">
+      
+      <!-- Dynamic Quote Box -->
+      <div id="quoteBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300">
+        <p class="mb-4 text-dialogue-text leading-relaxed text-lg">
+          <span id="quoteText">Loading wisdom from the digital realm...</span>
+        </p>
+      </div>
+
+      <!-- Command Output Display (Hidden Initially) -->
+      <div id="outputBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300 hidden">
+        <div class="mb-4">
+          <p class="text-dialogue-text text-sm mb-2">Generated Command:</p>
+          <div class="bg-background-dark border border-retro-border p-3 rounded">
+            <code id="commandOutput" class="text-player-text text-sm break-all"></code>
+          </div>
+          <button id="copyBtn" class="mt-2 bg-retro-border text-background-dark font-mono py-1 px-3 text-sm hover:bg-retro-border/80">
+            Copy Command
+          </button>
+        </div>
+        <div id="explanationBox" class="mt-4">
+          <p class="text-dialogue-text text-sm mb-2">Explanation:</p>
+          <p id="explanationText" class="text-dialogue-text/80 text-sm leading-relaxed"></p>
+        </div>
+        <div id="reviewsBox" class="mt-4">
+          <p class="text-dialogue-text text-sm mb-2">Reviews:</p>
+          <div id="reviewsList" class="space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="w-full bg-surface-dark border-2 border-retro-border p-4 shadow-retro transition-all duration-300">
+        <form id="commandForm" enctype="multipart/form-data">
+          <div class="flex items-start relative">
+            <span class="text-player-text pr-2 pt-2">&gt;</span>
+            <textarea 
+              id="promptInput"
+              name="prompt"
+              class="flex-grow bg-transparent border-none focus:ring-0 resize-none p-0 text-player-text placeholder-gray-500 text-lg" 
+              placeholder="Describe what you want to do with your media..."
+              rows="2"
+              required
+            ></textarea>
+            <div class="flex items-center pl-2 space-x-2">
+              <label for="fileInput" class="p-2 rounded-sm hover:bg-retro-border/20 cursor-pointer">
+                <span class="material-icons text-retro-border">attachment</span>
+              </label>
+              <input 
+                type="file" 
+                id="fileInput" 
+                name="files"
+                multiple 
+                accept="video/*,audio/*,image/*"
+                class="hidden"
+              />
+              <button 
+                type="submit"
+                id="submitBtn"
+                class="p-2 rounded-sm bg-retro-border text-background-dark hover:bg-retro-border/80"
+              >
+                <span class="material-icons">send</span>
+              </button>
+            </div>
+          </div>
+          
+          <!-- File List Display -->
+          <div id="fileList" class="mt-3 space-y-1 hidden">
+            <p class="text-dialogue-text text-sm">Selected Files:</p>
+            <div id="fileItems" class="text-player-text text-sm"></div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Loading Indicator -->
+      <div id="loadingBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300 hidden">
+        <div class="flex items-center justify-center space-x-3">
+          <div class="animate-pulse text-dialogue-text text-lg">Processing</div>
+          <div class="flex space-x-1">
+            <span class="animate-ping inline-block w-2 h-2 bg-retro-border rounded-full"></span>
+            <span class="animate-ping inline-block w-2 h-2 bg-retro-border rounded-full" style="animation-delay: 0.2s"></span>
+            <span class="animate-ping inline-block w-2 h-2 bg-retro-border rounded-full" style="animation-delay: 0.4s"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="flex flex-wrap justify-center gap-6 mt-8">
+        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Convert to MP4">
+          [1] Convert Format
+        </button>
+        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Add watermark to the video">
+          [2] Modify Visuals
+        </button>
+        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Adjust audio volume">
+          [3] Alter Audio
+        </button>
+        <button class="quick-action bg-surface-dark hover:bg-retro-border/20 text-dialogue-text font-mono py-3 px-6 border-2 border-retro-border shadow-retro transition-all duration-300 text-lg" data-prompt="Combine video with audio track">
+          [4] Combine Elements
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = window.location.origin;
+    
+    // LLM-generated quotes about FFmpeg and media processing
+    const quotes = [
+      {
+        text: "The terminal flickers to life, bathed in a soft green glow. A prompt appears:",
+        italic: "Welcome, traveler. Your media awaits its transformation. What shall we begin with today?"
+      },
+      {
+        text: "In the realm of digital artistry, every frame tells a story.",
+        italic: "Ready your commands, for the canvas of pixels awaits your vision."
+      },
+      {
+        text: "The ancient codec whispers secrets of compression and clarity.",
+        italic: "Speak your intent, and watch as bits dance to form your creation."
+      },
+      {
+        text: "A journey of a thousand frames begins with a single command.",
+        italic: "What transformation shall we conjure from the digital ether today?"
+      },
+      {
+        text: "In the depths of the terminal, magic and logic intertwine.",
+        italic: "Your media files stand ready. Command them, and they shall obey."
+      },
+      {
+        text: "The stream processor awakens, hungry for your instructions.",
+        italic: "Feed it your vision, and marvel at what emerges from the pipeline."
+      }
+    ];
+
+    let currentQuoteIndex = 0;
+
+    function displayRandomQuote() {
+      currentQuoteIndex = Math.floor(Math.random() * quotes.length);
+      const quote = quotes[currentQuoteIndex];
+      const quoteBox = document.getElementById('quoteBox');
+      quoteBox.innerHTML = `
+        <p class="mb-4 text-dialogue-text leading-relaxed text-lg">
+          ${quote.text}
+        </p>
+        <p class="text-dialogue-text leading-relaxed text-lg italic">
+          "${quote.italic}"
+        </p>
+      `;
+    }
+
+    // Display initial quote
+    displayRandomQuote();
+
+    // Rotate quotes every 15 seconds
+    setInterval(displayRandomQuote, 15000);
+
+    // File input handling
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const fileItems = document.getElementById('fileItems');
+
+    fileInput.addEventListener('change', function() {
+      if (this.files.length > 0) {
+        fileList.classList.remove('hidden');
+        fileItems.innerHTML = '';
+        Array.from(this.files).forEach(file => {
+          const fileItem = document.createElement('div');
+          fileItem.textContent = `• ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+          fileItems.appendChild(fileItem);
+        });
+      } else {
+        fileList.classList.add('hidden');
+      }
+    });
+
+    // Quick action buttons
+    document.querySelectorAll('.quick-action').forEach(button => {
+      button.addEventListener('click', function() {
+        document.getElementById('promptInput').value = this.dataset.prompt;
+        document.getElementById('promptInput').focus();
+      });
+    });
+
+    // Form submission
+    const commandForm = document.getElementById('commandForm');
+    const loadingBox = document.getElementById('loadingBox');
+    const outputBox = document.getElementById('outputBox');
+    const submitBtn = document.getElementById('submitBtn');
+
+    commandForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const formData = new FormData(this);
+      
+      // Show loading, hide output
+      loadingBox.classList.remove('hidden');
+      outputBox.classList.add('hidden');
+      submitBtn.disabled = true;
+
+      try {
+        const response = await fetch(`${API_BASE}/generate`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Display results
+        document.getElementById('commandOutput').textContent = data.command;
+        document.getElementById('explanationText').textContent = data.explanation || 'No explanation provided.';
+        
+        // Display reviews
+        const reviewsList = document.getElementById('reviewsList');
+        reviewsList.innerHTML = '';
+        if (data.reviews && data.reviews.length > 0) {
+          data.reviews.forEach(review => {
+            const reviewItem = document.createElement('div');
+            reviewItem.className = 'text-sm bg-background-dark border border-retro-border/30 p-2 rounded';
+            reviewItem.innerHTML = `
+              <div class="text-dialogue-text/60">Iteration ${review.iteration}: ${review.ok ? '✓ OK' : '✗ Failed'}</div>
+              ${review.reasons.length > 0 ? `<div class="text-dialogue-text/80 mt-1">Reasons: ${review.reasons.join(', ')}</div>` : ''}
+            `;
+            reviewsList.appendChild(reviewItem);
+          });
+        }
+
+        // Show output box
+        outputBox.classList.remove('hidden');
+        
+        // Scroll to output
+        outputBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+        console.error('Error:', error);
+      } finally {
+        loadingBox.classList.add('hidden');
+        submitBtn.disabled = false;
+      }
+    });
+
+    // Copy command button
+    document.getElementById('copyBtn').addEventListener('click', function() {
+      const commandText = document.getElementById('commandOutput').textContent;
+      navigator.clipboard.writeText(commandText).then(() => {
+        const originalText = this.textContent;
+        this.textContent = '✓ Copied!';
+        setTimeout(() => {
+          this.textContent = originalText;
+        }, 2000);
+      }).catch(err => {
+        alert('Failed to copy: ' + err);
+      });
+    });
+  </script>
+
+</body>
+</html>
