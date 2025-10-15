@@ -699,6 +699,10 @@ async def execute_command(command: str = Form(..., description="ffmpeg command t
     if not tokens or tokens[0].lower() != "ffmpeg":
         raise HTTPException(status_code=400, detail="Command must start with ffmpeg")
 
+    # Auto-confirm overwrites to prevent ffmpeg from hanging awaiting input
+    if "-y" not in tokens and "-n" not in tokens:
+        tokens.insert(1, "-y")
+
     try:
         result = await run_in_threadpool(
             lambda: subprocess.run(

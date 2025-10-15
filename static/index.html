@@ -67,6 +67,29 @@
         </div>
       </div>
 
+      <!-- Dialog Stack -->
+      <div id="dialogStack" class="w-full space-y-4"></div>
+
+      <!-- Confirmation Modal -->
+  <div id="confirmOverlay" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 transition-opacity duration-150">
+        <div class="bg-surface-dark/95 border-2 border-retro-border shadow-retro w-full max-w-md rounded-lg p-6 space-y-4">
+          <div class="flex items-center gap-3">
+            <span class="material-icons text-retro-border text-3xl" id="confirmIcon">play_circle</span>
+            <div>
+              <h3 id="confirmTitle" class="text-dialogue-text font-semibold text-lg">Confirm Action</h3>
+              <p id="confirmHost" class="text-dialogue-text/60 text-xs uppercase tracking-widest"></p>
+            </div>
+          </div>
+          <p id="confirmMessage" class="text-dialogue-text/80 text-sm leading-relaxed">
+            Are you sure you want to continue?
+          </p>
+          <div class="flex justify-end gap-3">
+            <button id="confirmCancel" type="button" class="px-4 py-2 border border-retro-border/50 text-dialogue-text text-sm rounded hover:bg-retro-border/10 transition">Cancel</button>
+            <button id="confirmOk" type="button" class="px-4 py-2 bg-retro-border text-background-dark text-sm rounded hover:bg-retro-border/80 transition">OK</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Command Output Display (Hidden Initially) -->
       <div id="outputBox" class="w-full bg-surface-dark border-2 border-retro-border p-6 shadow-retro transition-all duration-300 hidden">
         <div class="mb-5">
@@ -80,6 +103,9 @@
             </button>
             <button id="runBtn" type="button" class="bg-transparent border border-retro-border/70 text-dialogue-text py-1 px-3 text-sm hover:bg-retro-border/20 transition disabled:opacity-40 disabled:pointer-events-none">
               Execute on Server
+            </button>
+            <button id="refreshBtn" type="button" class="bg-transparent border border-retro-border/40 text-dialogue-text py-1 px-3 text-sm hover:bg-retro-border/20 transition">
+              Refresh Output
             </button>
           </div>
           <p id="outputDestination" class="mt-3 text-dialogue-text/60 text-xs uppercase tracking-widest"></p>
@@ -152,6 +178,14 @@
                 class="flex items-center justify-center h-10 w-10 rounded bg-retro-border text-background-dark hover:bg-retro-border/80 transition"
               >
                 <span class="material-icons">rocket_launch</span>
+              </button>
+              <button
+                type="button"
+                id="clearBtn"
+                class="flex items-center justify-center h-10 w-10 rounded border border-retro-border/40 text-retro-border hover:bg-retro-border/10 transition"
+                title="Clear prompt and selections"
+              >
+                <span class="material-icons">backspace</span>
               </button>
             </div>
           </div>
@@ -247,6 +281,15 @@
   const commandOutputEl = document.getElementById('commandOutput');
   const copyBtn = document.getElementById('copyBtn');
   const runBtn = document.getElementById('runBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const dialogStack = document.getElementById('dialogStack');
+  const confirmOverlay = document.getElementById('confirmOverlay');
+  const confirmTitle = document.getElementById('confirmTitle');
+  const confirmMessage = document.getElementById('confirmMessage');
+  const confirmHost = document.getElementById('confirmHost');
+  const confirmIcon = document.getElementById('confirmIcon');
+  const confirmCancel = document.getElementById('confirmCancel');
+  const confirmOk = document.getElementById('confirmOk');
   const outputDestination = document.getElementById('outputDestination');
   const notesBox = document.getElementById('notesBox');
   const notesList = document.getElementById('notesList');
@@ -255,6 +298,153 @@
   const executionStdout = document.getElementById('executionStdout');
   const executionStderr = document.getElementById('executionStderr');
   runBtn.disabled = true;
+
+  const dialogVariants = {
+    info: {
+      icon: 'info',
+      border: 'border-accent/60',
+      bg: 'bg-accent/10',
+      text: 'text-accent',
+    },
+    success: {
+      icon: 'check_circle',
+      border: 'border-[#27ff8f]/80',
+      bg: 'bg-[#27ff8f]/10',
+      text: 'text-[#27ff8f]',
+    },
+    error: {
+      icon: 'error',
+      border: 'border-red-500/70',
+      bg: 'bg-red-500/10',
+      text: 'text-red-400',
+    },
+    warning: {
+      icon: 'warning',
+      border: 'border-yellow-500/70',
+      bg: 'bg-yellow-500/10',
+      text: 'text-yellow-400',
+    },
+  };
+
+  function showDialog(type, title, message, opts = {}) {
+    const variant = dialogVariants[type] || dialogVariants.info;
+    const card = document.createElement('div');
+    card.className = `dialog-card relative overflow-hidden border-2 ${variant.border} ${variant.bg} rounded-lg p-4 shadow-retro/50 transition`;
+    card.innerHTML = `
+      <div class="flex items-start gap-3">
+        <span class="material-icons ${variant.text} text-3xl">${variant.icon}</span>
+        <div class="flex-1">
+          <h3 class="text-dialogue-text font-semibold text-sm uppercase tracking-wide">${title}</h3>
+          <p class="text-dialogue-text/80 text-sm mt-1 leading-relaxed">${message}</p>
+        </div>
+        <button type="button" class="text-dialogue-text/60 hover:text-dialogue-text" aria-label="Dismiss">
+          <span class="material-icons text-base">close</span>
+        </button>
+      </div>
+    `;
+
+    const closeBtn = card.querySelector('button');
+    closeBtn.addEventListener('click', () => {
+      card.classList.add('opacity-0', '-translate-y-2');
+      setTimeout(() => card.remove(), 180);
+    });
+
+    dialogStack.appendChild(card);
+
+    const autoDismiss = opts.autoDismiss ?? 6000;
+    if (autoDismiss) {
+      setTimeout(() => {
+        if (!card.isConnected) return;
+        card.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => card.remove(), 180);
+      }, autoDismiss);
+    }
+  }
+
+  function clearDialogs() {
+    dialogStack.innerHTML = '';
+  }
+
+  function resetOutputPanels() {
+    commandOutputEl.textContent = '';
+    document.getElementById('explanationText').textContent = '';
+    document.getElementById('reviewsList').innerHTML = '';
+    outputDestination.textContent = '';
+    notesList.innerHTML = '';
+    notesBox.classList.add('hidden');
+    outputBox.classList.add('hidden');
+    executionBox.classList.add('hidden');
+    executionStatus.textContent = 'Awaiting execution';
+    executionStdout.textContent = '(no output yet)';
+    executionStderr.textContent = '(no output yet)';
+    runBtn.disabled = true;
+  }
+
+  function showConfirmDialog({
+    title = 'Confirm Action',
+    message = 'Are you sure?',
+    confirmText = 'OK',
+    cancelText = 'Cancel',
+    icon = 'help',
+    host = '',
+  } = {}) {
+    return new Promise(resolve => {
+      confirmTitle.textContent = title;
+      confirmMessage.textContent = message;
+      confirmHost.textContent = host;
+      confirmIcon.textContent = icon;
+      confirmOk.textContent = confirmText;
+      confirmCancel.textContent = cancelText;
+
+      confirmOverlay.classList.remove('hidden');
+      confirmOverlay.classList.add('opacity-0');
+      requestAnimationFrame(() => {
+        confirmOverlay.classList.remove('opacity-0');
+      });
+
+      function cleanup(result) {
+        confirmOverlay.classList.add('opacity-0');
+        setTimeout(() => {
+          confirmOverlay.classList.add('hidden');
+          confirmOverlay.classList.remove('opacity-0');
+        }, 150);
+        confirmCancel.removeEventListener('click', onCancel);
+        confirmOk.removeEventListener('click', onConfirm);
+        confirmOverlay.removeEventListener('click', onOverlayClick);
+        window.removeEventListener('keydown', onKeydown);
+        resolve(result);
+      }
+
+      function onCancel() {
+        cleanup(false);
+      }
+
+      function onConfirm() {
+        cleanup(true);
+      }
+
+      function onOverlayClick(event) {
+        if (event.target === confirmOverlay) {
+          cleanup(false);
+        }
+      }
+
+      function onKeydown(event) {
+        if (event.key === 'Escape') {
+          cleanup(false);
+        }
+        if (event.key === 'Enter') {
+          cleanup(true);
+        }
+      }
+
+      confirmCancel.addEventListener('click', onCancel);
+      confirmOk.addEventListener('click', onConfirm);
+      confirmOverlay.addEventListener('click', onOverlayClick);
+      window.addEventListener('keydown', onKeydown);
+      confirmOk.focus();
+    });
+  }
     
     // LLM-generated quotes about FFmpeg and media processing
     const quotes = [
@@ -416,10 +606,17 @@
   const loadingBox = document.getElementById('loadingBox');
   const outputBox = document.getElementById('outputBox');
   const submitBtn = document.getElementById('submitBtn');
+  const clearBtn = document.getElementById('clearBtn');
 
     commandForm.addEventListener('submit', async function(e) {
       e.preventDefault();
-      
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        showDialog('error', 'No media input detected', 'Attach at least one media file before generating an ffmpeg command.');
+        promptInput.focus();
+        return;
+      }
+
       const formData = new FormData(this);
       const iterations = Math.max(1, parseInt(maxItersInput.value || '3', 10));
       formData.set('max_iters', String(iterations));
@@ -441,6 +638,8 @@
       outputDestination.textContent = '';
       notesList.innerHTML = '';
       notesBox.classList.add('hidden');
+      clearDialogs();
+      showDialog('info', 'Processing request', 'Hang tight while Gemini drafts and validates your ffmpeg command.', { autoDismiss: 4000 });
 
       try {
         const response = await fetch(`${API_BASE}/generate`, {
@@ -485,17 +684,18 @@
         }
 
         runBtn.disabled = !(data.command && data.command.startsWith('ffmpeg'));
+        showDialog('success', 'Command ready', 'Review the generated ffmpeg command below or run it directly on the server.');
 
         // Show output box
-        outputBox.classList.remove('hidden');
+  outputBox.classList.remove('hidden');
         
         // Scroll to output
         outputBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
       } catch (error) {
-        alert(`Error: ${error.message}`);
         console.error('Error:', error);
         runBtn.disabled = true;
+        showDialog('error', 'Generation failed', error.message || 'An unexpected error occurred while generating the command.', { autoDismiss: 8000 });
       } finally {
         loadingBox.classList.add('hidden');
         submitBtn.disabled = false;
@@ -508,11 +708,12 @@
       navigator.clipboard.writeText(commandText).then(() => {
         const originalText = this.textContent;
         this.textContent = '✓ Copied!';
+        showDialog('success', 'Copied to clipboard', 'The ffmpeg command is ready to paste.');
         setTimeout(() => {
           this.textContent = originalText;
         }, 2000);
       }).catch(err => {
-        alert('Failed to copy: ' + err);
+        showDialog('error', 'Copy failed', err.message || 'Unable to copy the command to your clipboard.');
       });
     });
 
@@ -520,9 +721,17 @@
     runBtn.addEventListener('click', async () => {
       const commandText = commandOutputEl.textContent.trim();
       if (!commandText) {
+        showDialog('warning', 'No command available', 'Generate an ffmpeg command before attempting to execute it.');
         return;
       }
-      const confirmed = window.confirm('Execute this ffmpeg command on the server now?');
+      const confirmed = await showConfirmDialog({
+        title: 'Execute on server',
+        message: 'Execute this ffmpeg command on the server now?',
+        confirmText: 'Execute',
+        cancelText: 'Cancel',
+        icon: 'rocket_launch',
+        host: window.location.origin,
+      });
       if (!confirmed) {
         return;
       }
@@ -552,13 +761,44 @@
           : `Command exited with code ${data.returncode}.`;
         executionStdout.textContent = data.stdout ? data.stdout.trim() : '(no stdout)';
         executionStderr.textContent = data.stderr ? data.stderr.trim() : '(no stderr)';
+        const dialogType = data.returncode === 0 ? 'success' : 'warning';
+        const message = data.returncode === 0 ? 'Media processing finished without errors.' : 'ffmpeg returned a non-zero status. Review stderr for additional context.';
+        showDialog(dialogType, 'Execution result', message, { autoDismiss: 8000 });
       } catch (error) {
         executionStatus.textContent = `Execution failed: ${error.message}`;
         executionStdout.textContent = '(no stdout captured)';
         executionStderr.textContent = '(no stderr captured)';
+        showDialog('error', 'Execution failed', error.message || 'Unable to run the command on the server.', { autoDismiss: 8000 });
       } finally {
         runBtn.disabled = false;
       }
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      resetOutputPanels();
+      showDialog('info', 'Output cleared', 'The generated command and logs were cleared from view.');
+    });
+
+    clearBtn.addEventListener('click', () => {
+      commandForm.reset();
+      promptInput.value = '';
+      outputPathInput.value = '';
+      maxItersInput.value = '3';
+      enableCriticInput.checked = true;
+      enableExplainInput.checked = true;
+      fileList.classList.add('hidden');
+      fileItems.innerHTML = '';
+      if (fileInput) {
+        fileInput.value = '';
+      }
+      if (activeEffectCard) {
+        activeEffectCard.classList.remove('ring-2', 'ring-retro-border', 'ring-offset-2', 'ring-offset-background-dark');
+        activeEffectCard = null;
+      }
+      resetOutputPanels();
+      clearDialogs();
+      showDialog('info', 'Form reset', 'Prompt, files, and options have been cleared.', { autoDismiss: 3000 });
+      promptInput.focus();
     });
   </script>
 
